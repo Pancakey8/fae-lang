@@ -12,9 +12,11 @@ pub fn println(scope: &mut Scope, at: Span) {
 }
 
 pub fn dump(scope: &mut Scope, at: Span) {
-    for v in &scope.stack.values {
+    println!("STACK:");
+    for v in scope.stack.values.iter().rev() {
         println!("{:?}", v);
     }
+    println!("---");
 }
 
 // STACK

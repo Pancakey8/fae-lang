@@ -1,12 +1,16 @@
-do-5-hello-world() {
+n-hello-world(int) {
     loop {
         "Hello, world!"
-        depth 5 = if { break }
+        swap
+        1 -
+        dup 0.0 = if { break }
     }
+    pop
 }
 
 main() {
-    do-5-hello-world
+    5
+    n-hello-world
     loop {
         depth 0 = if { break }
         println

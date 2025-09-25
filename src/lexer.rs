@@ -9,6 +9,7 @@ pub enum TokenKind {
     RCurly,
     LSquare,
     RSquare,
+    Comma,
     KwIf,
     KwLoop,
     KwBreak,
@@ -30,7 +31,7 @@ pub struct Token {
 }
 
 fn is_symbolic(ch: char) -> bool {
-    (ch.is_alphanumeric() || ch.is_ascii_punctuation()) && !"\"(){}[]".contains(ch)
+    (ch.is_alphanumeric() || ch.is_ascii_punctuation()) && !"\"(){}[],".contains(ch)
 }
 
 fn kw_match(s: &str) -> Option<TokenKind> {
@@ -109,6 +110,8 @@ impl Lexer {
             self.push_token(TokenKind::LSquare, 1)
         } else if self.matches("]") {
             self.push_token(TokenKind::RSquare, 1)
+        } else if self.matches(",") {
+            self.push_token(TokenKind::Comma, 1)
         } else {
             false
         }

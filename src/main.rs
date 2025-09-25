@@ -1,3 +1,4 @@
+#![allow(unused_variables)]
 mod ast;
 mod error;
 mod faestd;
@@ -38,7 +39,7 @@ fn main() {
             errs.print_error(&node.pos, format!("{s}"));
         } else {
             nodes.push(node.clone());
-            debug!("{:?}", node);
+            debug!("{:#?}", node);
         }
     }
     if nodes.len() != parser.nodes.len() {
@@ -46,7 +47,7 @@ fn main() {
     }
     let mut scope = Scope::new(errs);
     scope.run_block(&nodes);
-    if let Some(Function::Body(_)) = scope.funcs.get("main").cloned() {
+    if let Some(_) = scope.funcs.get("main").cloned() {
         scope.run_block(&vec![Node {
             kind: NodeKind::Instruction("main".to_string()),
             pos: Span { start: 0, end: 0 },

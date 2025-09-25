@@ -2,9 +2,17 @@ use crate::{debug, lexer as lx};
 
 #[derive(Debug, Clone)]
 pub enum NodeKind {
-    Loop { body: Vec<Node> },
-    If { body: Vec<Node> },
-    Function { name: String, body: Vec<Node> },
+    Loop {
+        body: Vec<Node>,
+    },
+    If {
+        body: Vec<Node>,
+    },
+    Function {
+        name: String,
+        params: Vec<String>,
+        body: Vec<Node>,
+    },
     Break,
     Instruction(String),
     String(String),
@@ -148,13 +156,36 @@ impl Parser {
             return false;
         };
         self.bump();
-        if !self.matches(lx::TokenKind::LParen) || !self.matches(lx::TokenKind::RParen) {
-            debug!("Here!");
+        if !self.matches(lx::TokenKind::LParen) {
             self.cursor = start;
             return false;
         }
+        let mut params = Vec::new();
+        while !self.is_eof() {
+            if self.matches(lx::TokenKind::RParen) {
+                break;
+            }
+
+            if let Some(lx::TokenKind::Symbol(tp)) = self.peek().map(|t| t.kind) {
+                self.bump();
+                params.push(tp);
+                if !self.matches(lx::TokenKind::Comma) {
+                    if self.matches(lx::TokenKind::RParen) {
+                        break;
+                    } else {
+                        return self
+                            .push_node(NodeKind::Error("Expected ',' or ')'".to_string()), 1);
+                    }
+                }
+            } else {
+                return self.push_node(NodeKind::Error("Expected type or ')'".to_string()), 1);
+            }
+        }
         match self.parse_body() {
-            Some(body) => self.push_node(NodeKind::Function { name, body }, self.cursor - start),
+            Some(body) => self.push_node(
+                NodeKind::Function { name, params, body },
+                self.cursor - start,
+            ),
             None => true,
         }
     }

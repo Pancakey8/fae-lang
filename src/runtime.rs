@@ -1,8 +1,10 @@
 use std::{collections::HashMap, process::exit};
 
 use crate::{
-    ast::{self, NodeKind},
-    debug, error, faestd,
+    ast::{self},
+    debug,
+    error::{self, FErrorManager},
+    faestd,
     lexer::{self as lx},
 };
 
@@ -83,16 +85,18 @@ impl Stack {
         self.values.len()
     }
 
-    pub fn dup(&mut self) -> bool {
-        match self.values.last() {
-            Some(v) => {
-                self.push(v.clone());
-                true
-            }
-            None => false,
+    pub fn top_n(&mut self, n: usize) -> Option<Vec<Value>> {
+        if n == 0 {
+            return Some(Vec::new());
         }
-    }
+        if self.values.len() < n {
+            return None;
+        }
 
+        let start = self.values.len() - n;
+        let drained: Vec<Value> = self.values.drain(start..).collect();
+        Some(drained)
+    }
     pub fn is_matching_params(&self, params: &[&str]) -> bool {
         if params.len() > self.values.len() {
             return false;
@@ -113,7 +117,10 @@ pub type InternalFn = fn(&mut Scope, lx::Span);
 #[derive(Clone)]
 pub enum Function {
     Internal(InternalFn),
-    Body(Vec<ast::Node>),
+    Runtime {
+        params: Vec<String>,
+        body: Vec<ast::Node>,
+    },
 }
 
 pub struct Scope {
@@ -168,6 +175,7 @@ impl Scope {
             match &node.kind {
                 ast::NodeKind::Loop { body } => loop {
                     if let ControlState::Break = self.run_block(body) {
+                        debug!("BREAK!");
                         break;
                     }
                 },
@@ -184,7 +192,7 @@ impl Scope {
                         exit(1);
                     }
                 },
-                ast::NodeKind::Function { name, body } => {
+                ast::NodeKind::Function { name, params, body } => {
                     if self.funcs.contains_key(name) {
                         self.errs.print_error(
                             &node.pos,
@@ -192,15 +200,31 @@ impl Scope {
                         );
                         exit(1);
                     }
-                    self.funcs
-                        .insert(name.clone(), Function::Body(body.clone()));
+                    self.funcs.insert(
+                        name.clone(),
+                        Function::Runtime {
+                            params: params.to_vec(),
+                            body: body.clone(),
+                        },
+                    );
                 }
                 ast::NodeKind::Break => return ControlState::Break,
                 ast::NodeKind::Instruction(inst) => {
                     let func = self.funcs.get(inst).cloned();
                     match func {
-                        Some(Function::Body(block)) => {
-                            self.run_block(&block);
+                        Some(Function::Runtime { params, body }) => {
+                            let params: Vec<&str> = params.iter().map(|s| s.as_str()).collect();
+                            self.ensure_params(&params, node.pos.clone());
+                            let errs = std::mem::replace(
+                                &mut self.errs,
+                                FErrorManager::new(String::new()),
+                            );
+                            let mut call_scope = Scope::new(errs);
+                            call_scope.funcs = self.funcs.clone();
+                            call_scope.stack.values = self.stack.top_n(params.len()).unwrap();
+                            call_scope.run_block(&body);
+                            self.errs = call_scope.errs;
+                            self.stack.values.append(&mut call_scope.stack.values);
                         }
                         Some(Function::Internal(f)) => {
                             f(self, node.pos.clone());

@@ -3,7 +3,6 @@ use crate::lexer as lx;
 pub struct LineInfo {
     lines: Vec<String>,
     start: usize,
-    end: usize,
     mark_left: usize,
     mark_right: usize,
     line_no: usize,
@@ -13,7 +12,6 @@ impl LineInfo {
     pub fn new(
         lines: Vec<String>,
         start: usize,
-        end: usize,
         mark_left: usize,
         mark_right: usize,
         line_no: usize,
@@ -21,7 +19,6 @@ impl LineInfo {
         LineInfo {
             lines,
             start,
-            end,
             mark_left,
             mark_right,
             line_no,
@@ -109,7 +106,7 @@ impl FErrorManager {
             lines.push(text.to_string());
         }
 
-        LineInfo::new(lines, before_start, after_end, pos.start, pos.end, line_no)
+        LineInfo::new(lines, before_start, pos.start, pos.end, line_no)
     }
 
     pub fn print_error(&self, pos: &lx::Span, err: String) {
