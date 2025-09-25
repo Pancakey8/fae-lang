@@ -1,0 +1,14 @@
+do-5-hello-world() {
+    loop {
+        "Hello, world!"
+        depth 5 = if { break }
+    }
+}
+
+main() {
+    do-5-hello-world
+    loop {
+        depth 0 = if { break }
+        println
+    }
+}
