@@ -10,6 +10,7 @@ pub enum NodeKind {
     },
     If {
         body: Vec<Node>,
+        otherwise: Option<Vec<Node>>,
     },
     Function {
         name: String,
@@ -22,6 +23,7 @@ pub enum NodeKind {
     Break,
     Instruction(String),
     String(String),
+    Char(char),
     Number(f32),
     Int(i32),
     Bool(bool),
@@ -98,6 +100,10 @@ impl Parser {
             lx::TokenKind::Bool(b) => {
                 self.bump();
                 self.push_node(NodeKind::Bool(b), 1)
+            }
+            lx::TokenKind::Char(c) => {
+                self.bump();
+                self.push_node(NodeKind::Char(c), 1)
             }
             _ => false,
         }) || self.try_stack()
@@ -191,10 +197,17 @@ impl Parser {
         if !self.matches(lx::TokenKind::KwIf) {
             return false;
         }
-        match self.parse_body() {
-            Some(body) => self.push_node(NodeKind::If { body }, self.cursor - start),
-            None => true,
+        let Some(body) = self.parse_body() else {
+            return true;
+        };
+        let mut otherwise = None;
+        if self.matches(lx::TokenKind::KwElse) {
+            otherwise = self.parse_body();
+            if otherwise.is_none() {
+                return true;
+            }
         }
+        self.push_node(NodeKind::If { body, otherwise }, self.cursor - start)
     }
 
     fn try_function(&mut self) -> bool {

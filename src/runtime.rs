@@ -11,6 +11,7 @@ use crate::{
 #[derive(Debug, Clone)]
 pub enum Value {
     String(String),
+    Char(char),
     Int(i32),
     Number(f32),
     Bool(bool),
@@ -20,6 +21,7 @@ pub enum Value {
 #[derive(Debug, Clone, Copy)]
 pub enum ValueType {
     String,
+    Char,
     Int,
     Number,
     Bool,
@@ -32,6 +34,7 @@ impl ValueType {
     pub fn from_str(name: &str) -> Option<ValueType> {
         match name {
             "String" => Some(ValueType::String),
+            "Char" => Some(ValueType::Char),
             "Int" => Some(ValueType::Int),
             "Bool" => Some(ValueType::Bool),
             "Number" => Some(ValueType::Number),
@@ -45,6 +48,7 @@ impl ValueType {
     pub fn into_str(&self) -> &'static str {
         match self {
             ValueType::String => "String",
+            ValueType::Char => "Char",
             ValueType::Int => "Int",
             ValueType::Bool => "Bool",
             ValueType::Number => "Number",
@@ -81,6 +85,7 @@ impl Value {
     pub fn type_name(&self) -> ValueType {
         match self {
             Value::String(_) => ValueType::String,
+            Value::Char(_) => ValueType::Char,
             Value::Int(_) => ValueType::Int,
             Value::Number(_) => ValueType::Number,
             Value::Bool(_) => ValueType::Bool,
@@ -91,6 +96,7 @@ impl Value {
     pub fn as_integral(&self) -> Option<f32> {
         match self {
             Value::String(_) => None,
+            Value::Char(c) => Some(*c as u32 as f32),
             Value::Int(n) => Some(*n as f32),
             Value::Number(n) => Some(*n),
             Value::Bool(b) => {
@@ -107,6 +113,7 @@ impl Value {
     pub fn as_string(&self) -> String {
         match self {
             Value::String(s) => s.clone(),
+            Value::Char(c) => c.to_string(),
             Value::Int(n) => n.to_string(),
             Value::Number(n) => n.to_string(),
             Value::Bool(b) => if *b { "true" } else { "false" }.to_string(),
@@ -119,13 +126,25 @@ impl Value {
                     .collect::<Vec<_>>()
                     .join(",")
             ),
-            _ => format!("(Instance of {})", self.type_name().into_str()),
+            // _ => format!("(Instance of {})", self.type_name().into_str()),
         }
     }
 
     pub fn as_int(&self) -> Option<i32> {
         match self {
-            Value::String(_) => None,
+            Value::String(s) => {
+                let mut lexer = lx::Lexer::new(s.clone());
+                lexer.try_all();
+                if lexer.tokens.is_empty() {
+                    None
+                } else {
+                    match lexer.tokens[0].kind {
+                        lx::TokenKind::Int(n) => Some(n),
+                        _ => None,
+                    }
+                }
+            }
+            Value::Char(c) => Some(*c as u32 as i32),
             Value::Int(n) => Some(*n),
             Value::Number(n) => Some(*n as i32),
             Value::Bool(b) => Some(if *b { 1 } else { 0 }),
@@ -265,13 +284,19 @@ impl Scope {
                         break;
                     }
                 },
-                ast::NodeKind::If { body } => match self.stack.pop() {
+                ast::NodeKind::If { body, otherwise } => match self.stack.pop() {
                     Some(Value::Bool(true)) => {
                         if let ControlState::Break = self.run_block(body) {
                             return ControlState::Break;
                         }
                     }
-                    Some(Value::Bool(false)) => {}
+                    Some(Value::Bool(false)) => {
+                        if let Some(block) = otherwise.as_ref() {
+                            if let ControlState::Break = self.run_block(block) {
+                                return ControlState::Break;
+                            }
+                        }
+                    }
                     _ => {
                         self.errs
                             .print_error(&node.pos, format!("If expects parameters: (bool)"));
@@ -324,6 +349,7 @@ impl Scope {
                     }
                 }
                 ast::NodeKind::String(v) => self.stack.push(Value::String(v.clone())),
+                ast::NodeKind::Char(c) => self.stack.push(Value::Char(*c)),
                 ast::NodeKind::Number(v) => self.stack.push(Value::Number(*v)),
                 ast::NodeKind::Int(v) => self.stack.push(Value::Int(*v)),
                 ast::NodeKind::Bool(v) => self.stack.push(Value::Bool(*v)),

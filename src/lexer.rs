@@ -1,6 +1,9 @@
+use std::{collections::HashMap, hash::Hash};
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     String(String),
+    Char(char),
     Number(f32),
     Int(i32),
     LParen,
@@ -11,6 +14,7 @@ pub enum TokenKind {
     RSquare,
     Comma,
     KwIf,
+    KwElse,
     KwLoop,
     KwBreak,
     KwWith,
@@ -38,6 +42,7 @@ fn is_symbolic(ch: char) -> bool {
 fn kw_match(s: &str) -> Option<TokenKind> {
     match s {
         "if" => Some(TokenKind::KwIf),
+        "else" => Some(TokenKind::KwElse),
         "loop" => Some(TokenKind::KwLoop),
         "break" => Some(TokenKind::KwBreak),
         "with" => Some(TokenKind::KwWith),
@@ -47,10 +52,15 @@ fn kw_match(s: &str) -> Option<TokenKind> {
     }
 }
 
+fn escape_map() -> HashMap<&'static str, char> {
+    HashMap::from([("\\n", '\n'), ("\\\\", '\\'), ("\\t", '\t'), ("\\\"", '\"')])
+}
+
 pub struct Lexer {
     input: String,
     pub tokens: Vec<Token>,
     cursor: usize,
+    escapes: HashMap<&'static str, char>,
 }
 
 impl Lexer {
@@ -169,16 +179,19 @@ impl Lexer {
             if self.matches("\"") {
                 is_closed = true;
                 break;
-            } else if self.matches("\\\\") {
-                contents += "\\";
-            } else if self.matches("\\\"") {
-                contents += "\"";
-            } else if self.matches("\\n") {
-                contents += "\n";
-            } else if self.matches("\\t") {
-                contents += "\t";
             } else {
-                contents.push(self.bump().unwrap());
+                let mut any_match = false;
+                let keys = self.escapes.keys().copied().collect::<Vec<_>>();
+                for k in keys {
+                    if self.matches(k) {
+                        contents.push(self.escapes[k]);
+                        any_match = true;
+                        break;
+                    }
+                }
+                if !any_match {
+                    contents.push(self.bump().unwrap());
+                }
             }
         }
 
@@ -190,6 +203,44 @@ impl Lexer {
         } else {
             self.push_token(TokenKind::String(contents), self.cursor - start)
         }
+    }
+
+    fn try_char(&mut self) -> bool {
+        let start = self.cursor;
+        if !self.matches("'") {
+            return false;
+        }
+
+        if self.is_eof() {
+            return self.push_token(
+                TokenKind::Error("Unclosed character quote \"'\"".to_string()),
+                1,
+            );
+        }
+
+        let ch = {
+            let keys = self.escapes.keys().copied().collect::<Vec<_>>();
+            let mut found: Option<char> = None;
+            for k in &keys {
+                if self.matches(*k) {
+                    found = Some(self.escapes[k]);
+                    break;
+                }
+            }
+            match found {
+                Some(c) => c,
+                None => self.bump().unwrap(),
+            }
+        };
+
+        if !self.matches("'") {
+            return self.push_token(
+                TokenKind::Error("Unclosed character quote \"'\"".to_string()),
+                self.cursor - start,
+            );
+        }
+
+        self.push_token(TokenKind::Char(ch), self.cursor - start)
     }
 
     fn try_symbol(&mut self) -> bool {
@@ -234,6 +285,7 @@ impl Lexer {
             || self.try_parens()
             || self.try_number()
             || self.try_string()
+            || self.try_char()
             || self.try_symbol()
             || false
     }
@@ -243,6 +295,7 @@ impl Lexer {
             input,
             tokens: Vec::new(),
             cursor: 0,
+            escapes: escape_map(),
         }
     }
 

@@ -1,14 +1,128 @@
-main (Stack) {
-    dup str println
+// Full todo list app in Fae
+// Writes the list into ./todo.txt
+load_list () {
+    "todo.txt" fs/read
+    not if {
+        []
+        break
+    }
+    chars@ with {
+        depth 0 = if { break }
+        flip
+        depth
+        []
+        loop {
+            swap dup 0 = if { break } 1 - int swap
+            rot dup '\n' = if {
+                pop
+                chars&
+                shove
+                []
+            } else {
+                push
+            }
+        }
+        pop
+        chars&
+        shove
+    } 
+}
+
+save_list (Stack) {
+    @ flip
+    loop {
+        depth 0 = if { "" break }
+        depth 1 = if { break }
+        "\n" swap
+        str& str&
+    }
+    dump
+    "todo.txt" swap fs/write
+}
+
+main (Stack /* args */) {
+    // fae todo.fae ....
     with {
-        depth 3 /= if {
-            "Expected command"
+        depth 3 < if {
+"HELP:
+\t- add <Description> -- adds to your todo list
+\t- rm  <Number>      -- removes entry from your list
+\t- list              -- displays your list"
             println
             exit
         }
-        rot pop // fae
-        swap pop // todo.fae
+        flip pop pop
+    } @
+
+    dup "add" = if {
+        pop
+        depth 1 /= if {
+            "USAGE: add <Description>"
+            println
+            exit 
+        }
+        load_list
+        swap push
+        with { shove }
+        save_list
+        break
     }
-    expand
-    println
+
+    dup "rm" = if {
+        pop
+        depth 1 /= if {
+            "USAGE: rm <Number>"
+            println
+            exit 
+        }
+        int
+        load_list
+        swap push
+        with {
+            []
+            loop {
+                swap dup 1 = if { rot pop break } 1 - int swap
+                rot push
+            }
+            pop
+            dump
+            loop {
+                depth 2 < if { break }
+                swap push
+            }
+            @
+            dump
+            flip
+        }
+        save_list
+        break
+    }
+
+    dup "list" = if {
+        pop
+        depth 0 /= if {
+            "USAGE: list"
+            println
+            exit 
+        }
+        "List:"
+        println
+        load_list
+        with {
+            1
+            loop {
+                depth 1 = if {
+                    break
+                }
+                dup str
+                ". "
+                str&
+                rot
+                str&
+                println
+                1 + int
+            }
+        }
+        break
+    }
 }
