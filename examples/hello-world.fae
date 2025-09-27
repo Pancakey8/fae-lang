@@ -1,4 +1,4 @@
-n-hello-world(int) {
+n-hello-world(Int) {
     loop {
         "Hello, world!"
         swap

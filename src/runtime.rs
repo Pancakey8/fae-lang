@@ -16,13 +16,70 @@ pub enum Value {
     Bool(bool),
 }
 
-impl Value {
-    pub fn type_name(&self) -> &str {
+#[derive(Debug, Clone, Copy)]
+pub enum ValueType {
+    String,
+    Int,
+    Number,
+    Bool,
+    Any,
+    Integral,
+}
+
+impl ValueType {
+    pub fn from_str(name: &str) -> Option<ValueType> {
+        match name {
+            "String" => Some(ValueType::String),
+            "Int" => Some(ValueType::Int),
+            "Bool" => Some(ValueType::Bool),
+            "Number" => Some(ValueType::Number),
+            "Any" => Some(ValueType::Any),
+            "Integral" => Some(ValueType::Integral),
+            _ => None,
+        }
+    }
+
+    pub fn into_str(&self) -> &'static str {
         match self {
-            Value::String(_) => "string",
-            Value::Int(_) => "int",
-            Value::Number(_) => "number",
-            Value::Bool(_) => "bool",
+            ValueType::String => "String",
+            ValueType::Int => "Int",
+            ValueType::Bool => "Bool",
+            ValueType::Number => "Number",
+            ValueType::Any => "Any",
+            ValueType::Integral => "Integral",
+        }
+    }
+
+    pub fn matches_constraint(&self, other: &ValueType) -> bool {
+        if std::mem::discriminant(self) == std::mem::discriminant(other) {
+            return true;
+        }
+
+        if let ValueType::Any = other {
+            return true;
+        }
+
+        if let ValueType::Integral = other {
+            if let ValueType::Number = self {
+                return true;
+            }
+
+            if let ValueType::Int = self {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
+impl Value {
+    pub fn type_name(&self) -> ValueType {
+        match self {
+            Value::String(_) => ValueType::String,
+            Value::Int(_) => ValueType::Int,
+            Value::Number(_) => ValueType::Number,
+            Value::Bool(_) => ValueType::Bool,
         }
     }
 
@@ -97,28 +154,18 @@ impl Stack {
         let drained: Vec<Value> = self.values.drain(start..).collect();
         Some(drained)
     }
-    pub fn is_matching_params(&self, params: &[&str]) -> bool {
-        if params.len() > self.values.len() {
-            return false;
-        }
-
-        for (i, param) in params.iter().rev().enumerate() {
-            if *param != self.values[self.values.len() - 1 - i].type_name() {
-                return false;
-            }
-        }
-
-        true
-    }
 }
 
 pub type InternalFn = fn(&mut Scope, lx::Span);
 
 #[derive(Clone)]
 pub enum Function {
-    Internal(InternalFn),
+    Internal {
+        params: Vec<ValueType>,
+        body: InternalFn,
+    },
     Runtime {
-        params: Vec<String>,
+        params: Vec<ValueType>,
         body: Vec<ast::Node>,
     },
 }
@@ -143,21 +190,42 @@ impl Scope {
         }
     }
 
-    pub fn ensure_params(&self, params: &[&str], at: lx::Span) {
+    pub fn is_matching_params(&self, params: &[ValueType]) -> bool {
+        if params.len() > self.stack.values.len() {
+            return false;
+        }
+
+        for (i, param) in params.iter().rev().enumerate() {
+            if !self.stack.values[self.stack.values.len() - 1 - i]
+                .type_name()
+                .matches_constraint(param)
+            {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    pub fn ensure_params(&self, params: &[ValueType], at: lx::Span) {
         let stack_len = self.stack.values.len();
 
-        if stack_len < params.len() || !self.stack.is_matching_params(params) {
+        if stack_len < params.len() || !self.is_matching_params(params) {
             let got: String = self
                 .stack
                 .values
                 .iter()
                 .rev()
                 .take(params.len())
-                .map(|v| v.type_name())
+                .map(|v| v.type_name().into_str())
                 .rev()
                 .collect::<Vec<_>>()
                 .join(",");
-            let wanted = params.join(",");
+            let wanted = params
+                .iter()
+                .map(|c| c.into_str())
+                .collect::<Vec<_>>()
+                .join(",");
             self.errs.print_error(
                 &at,
                 format!("Expected parameters ({wanted}), found ({got})"),
@@ -200,6 +268,7 @@ impl Scope {
                         );
                         exit(1);
                     }
+
                     self.funcs.insert(
                         name.clone(),
                         Function::Runtime {
@@ -213,7 +282,6 @@ impl Scope {
                     let func = self.funcs.get(inst).cloned();
                     match func {
                         Some(Function::Runtime { params, body }) => {
-                            let params: Vec<&str> = params.iter().map(|s| s.as_str()).collect();
                             self.ensure_params(&params, node.pos.clone());
                             let errs = std::mem::replace(
                                 &mut self.errs,
@@ -226,8 +294,9 @@ impl Scope {
                             self.errs = call_scope.errs;
                             self.stack.values.append(&mut call_scope.stack.values);
                         }
-                        Some(Function::Internal(f)) => {
-                            f(self, node.pos.clone());
+                        Some(Function::Internal { params, body }) => {
+                            self.ensure_params(&params, node.pos.clone());
+                            body(self, node.pos.clone());
                         }
                         None => {
                             self.errs

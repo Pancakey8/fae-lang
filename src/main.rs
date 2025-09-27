@@ -5,7 +5,7 @@ mod faestd;
 mod lexer;
 mod runtime;
 
-use std::{fs, process::exit};
+use std::{env::args, fs, path, process::exit};
 
 use ast::*;
 use error::*;
@@ -13,7 +13,15 @@ use lexer::*;
 use runtime::*;
 
 fn main() {
-    let input = fs::read_to_string("./example.fae").unwrap();
+    let Some(arg) = args().nth(1) else {
+        println!("USAGE: fae <file>.fae");
+        exit(1);
+    };
+    if !fs::exists(&arg).map_or(false, |b| b) {
+        println!("File doesn't exist");
+        exit(1);
+    }
+    let input = fs::read_to_string(arg).unwrap();
     let errs = FErrorManager::new(input.clone());
     let mut lexer = Lexer::new(input);
     lexer.try_all();

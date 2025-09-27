@@ -1,4 +1,7 @@
-use crate::{debug, lexer as lx};
+use crate::{
+    debug, lexer as lx,
+    runtime::{self as rt, ValueType},
+};
 
 #[derive(Debug, Clone)]
 pub enum NodeKind {
@@ -10,7 +13,7 @@ pub enum NodeKind {
     },
     Function {
         name: String,
-        params: Vec<String>,
+        params: Vec<rt::ValueType>,
         body: Vec<Node>,
     },
     Break,
@@ -168,7 +171,10 @@ impl Parser {
 
             if let Some(lx::TokenKind::Symbol(tp)) = self.peek().map(|t| t.kind) {
                 self.bump();
-                params.push(tp);
+                let Some(vtype) = rt::ValueType::from_str(tp.as_str()) else {
+                    return self.push_node(NodeKind::Error("Expected valid type".to_string()), 1);
+                };
+                params.push(vtype);
                 if !self.matches(lx::TokenKind::Comma) {
                     if self.matches(lx::TokenKind::RParen) {
                         break;
