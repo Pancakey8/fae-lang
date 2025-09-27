@@ -1,0 +1,14 @@
+main (Stack) {
+    dup str println
+    with {
+        depth 3 /= if {
+            "Expected command"
+            println
+            exit
+        }
+        rot pop // fae
+        swap pop // todo.fae
+    }
+    expand
+    println
+}

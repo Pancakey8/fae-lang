@@ -14,6 +14,7 @@ pub enum Value {
     Int(i32),
     Number(f32),
     Bool(bool),
+    Stack(Stack),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -24,6 +25,7 @@ pub enum ValueType {
     Bool,
     Any,
     Integral,
+    Stack,
 }
 
 impl ValueType {
@@ -35,6 +37,7 @@ impl ValueType {
             "Number" => Some(ValueType::Number),
             "Any" => Some(ValueType::Any),
             "Integral" => Some(ValueType::Integral),
+            "Stack" => Some(ValueType::Stack),
             _ => None,
         }
     }
@@ -47,6 +50,7 @@ impl ValueType {
             ValueType::Number => "Number",
             ValueType::Any => "Any",
             ValueType::Integral => "Integral",
+            ValueType::Stack => "Stack",
         }
     }
 
@@ -80,6 +84,7 @@ impl Value {
             Value::Int(_) => ValueType::Int,
             Value::Number(_) => ValueType::Number,
             Value::Bool(_) => ValueType::Bool,
+            Value::Stack(stack) => ValueType::Stack,
         }
     }
 
@@ -95,15 +100,26 @@ impl Value {
                     Some(0.0)
                 }
             }
+            Value::Stack(stack) => None,
         }
     }
 
-    pub fn as_string(&self) -> Option<String> {
+    pub fn as_string(&self) -> String {
         match self {
-            Value::String(s) => Some(s.clone()),
-            Value::Int(n) => Some(n.to_string()),
-            Value::Number(n) => Some(n.to_string()),
-            Value::Bool(b) => Some(if *b { "true" } else { "false" }.to_string()),
+            Value::String(s) => s.clone(),
+            Value::Int(n) => n.to_string(),
+            Value::Number(n) => n.to_string(),
+            Value::Bool(b) => if *b { "true" } else { "false" }.to_string(),
+            Value::Stack(stack) => format!(
+                "[{}]",
+                stack
+                    .values
+                    .iter()
+                    .map(|v| v.as_string())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+            _ => format!("(Instance of {})", self.type_name().into_str()),
         }
     }
 
@@ -113,10 +129,12 @@ impl Value {
             Value::Int(n) => Some(*n),
             Value::Number(n) => Some(*n as i32),
             Value::Bool(b) => Some(if *b { 1 } else { 0 }),
+            Value::Stack(stack) => None,
         }
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Stack {
     pub values: Vec<Value>,
 }
@@ -309,7 +327,21 @@ impl Scope {
                 ast::NodeKind::Number(v) => self.stack.push(Value::Number(*v)),
                 ast::NodeKind::Int(v) => self.stack.push(Value::Int(*v)),
                 ast::NodeKind::Bool(v) => self.stack.push(Value::Bool(*v)),
+                ast::NodeKind::Stack(stack) => self.stack.push(Value::Stack(stack.clone())),
                 ast::NodeKind::Error(_) => unreachable!(),
+                ast::NodeKind::With { body } => {
+                    self.ensure_params(&[ValueType::Stack], node.pos.clone());
+                    let Some(Value::Stack(stk)) = self.stack.pop() else {
+                        unreachable!("params guarantee");
+                    };
+                    let errs = std::mem::replace(&mut self.errs, FErrorManager::new(String::new()));
+                    let mut scope = Scope::new(errs);
+                    scope.funcs = self.funcs.clone();
+                    scope.stack = stk;
+                    scope.run_block(&body);
+                    self.errs = scope.errs;
+                    self.stack.values.push(Value::Stack(scope.stack));
+                }
             }
         }
         ControlState::Normal

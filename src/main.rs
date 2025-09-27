@@ -5,7 +5,7 @@ mod faestd;
 mod lexer;
 mod runtime;
 
-use std::{env::args, fs, path, process::exit};
+use std::{env::args, fs, process::exit};
 
 use ast::*;
 use error::*;
@@ -56,6 +56,9 @@ fn main() {
     let mut scope = Scope::new(errs);
     scope.run_block(&nodes);
     if let Some(_) = scope.funcs.get("main").cloned() {
+        scope.stack.push(Value::Stack(Stack {
+            values: args().map(|s| Value::String(s)).collect(),
+        }));
         scope.run_block(&vec![Node {
             kind: NodeKind::Instruction("main".to_string()),
             pos: Span { start: 0, end: 0 },

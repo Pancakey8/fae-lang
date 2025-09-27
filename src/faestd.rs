@@ -76,6 +76,13 @@ pub fn depth(scope: &mut Scope, at: Span) {
     scope.stack.push(Value::Int(depth as i32));
 }
 
+pub fn expand(scope: &mut Scope, at: Span) {
+    let Some(Value::Stack(Stack { mut values })) = scope.stack.pop() else {
+        unreachable!("params will fail")
+    };
+    scope.stack.values.append(&mut values);
+}
+
 // ARITHMETIC
 fn get_integral2(scope: &mut Scope, at: Span) -> (f32, f32) {
     let Some(Some(right)) = scope.stack.pop().map(|c| c.as_integral()) else {
@@ -146,18 +153,55 @@ pub fn equ(scope: &mut Scope, at: Span) {
         unreachable!("params will fail");
     };
 
-    scope.stack.push(Value::Bool(match (left, right) {
+    scope.stack.push(Value::Bool(match (&left, &right) {
         (Value::String(a), Value::String(b)) => a == b,
         (Value::Int(a), Value::Int(b)) => a == b,
         (Value::Number(a), Value::Number(b)) => a == b,
         (Value::Bool(a), Value::Bool(b)) => a == b,
-        _ => false,
+        _ => {
+            scope.errs.print_error(
+                &at,
+                format!(
+                    "Equality between {} and {} not allowed",
+                    left.type_name().into_str(),
+                    right.type_name().into_str()
+                ),
+            );
+            exit(1);
+        }
+    }));
+}
+
+pub fn nequ(scope: &mut Scope, at: Span) {
+    let Some(right) = scope.stack.pop() else {
+        unreachable!("params will fail");
+    };
+    let Some(left) = scope.stack.pop() else {
+        unreachable!("params will fail");
+    };
+
+    scope.stack.push(Value::Bool(match (&left, &right) {
+        (Value::String(a), Value::String(b)) => a != b,
+        (Value::Int(a), Value::Int(b)) => a != b,
+        (Value::Number(a), Value::Number(b)) => a != b,
+        (Value::Bool(a), Value::Bool(b)) => a != b,
+        _ => {
+            scope.errs.print_error(
+                &at,
+                format!(
+                    "Equality between {} and {} not allowed",
+                    left.type_name().into_str(),
+                    right.type_name().into_str()
+                ),
+            );
+            exit(1);
+        }
     }));
 }
 
 // CONVERSION
 pub fn stringify(scope: &mut Scope, at: Span) {
-    let Some(Some(top)) = scope.stack.pop().map(|c| c.as_string()) else {
+    let Some(top) = scope.stack.pop().map(|c| c.as_string()) else {
         scope
             .errs
             .print_error(&at, "Failed to cast to string".to_string());
@@ -174,6 +218,11 @@ pub fn intify(scope: &mut Scope, at: Span) {
         exit(1);
     };
     scope.stack.push(Value::Int(top));
+}
+
+// OS
+pub fn fae_exit(scope: &mut Scope, at: Span) {
+    exit(0);
 }
 
 pub fn std_get_fns() -> HashMap<String, Function> {
@@ -199,6 +248,7 @@ pub fn std_get_fns() -> HashMap<String, Function> {
                 rot3_rev as InternalFn,
             ),
             ("depth", vec![], depth as InternalFn),
+            ("expand", vec![ValueType::Stack], expand as InternalFn),
             (
                 "+",
                 vec![ValueType::Integral, ValueType::Integral],
@@ -247,6 +297,12 @@ pub fn std_get_fns() -> HashMap<String, Function> {
                 lesseq as InternalFn,
             ),
             ("=", vec![ValueType::Any, ValueType::Any], equ as InternalFn),
+            (
+                "/=",
+                vec![ValueType::Any, ValueType::Any],
+                nequ as InternalFn,
+            ),
+            ("exit", vec![], fae_exit as InternalFn),
         ]
         .map(|(s, p, f)| {
             (

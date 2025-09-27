@@ -1,6 +1,6 @@
 use crate::{
     debug, lexer as lx,
-    runtime::{self as rt, ValueType},
+    runtime::{self as rt},
 };
 
 #[derive(Debug, Clone)]
@@ -16,12 +16,16 @@ pub enum NodeKind {
         params: Vec<rt::ValueType>,
         body: Vec<Node>,
     },
+    With {
+        body: Vec<Node>,
+    },
     Break,
     Instruction(String),
     String(String),
     Number(f32),
     Int(i32),
     Bool(bool),
+    Stack(rt::Stack),
     Error(String),
 }
 
@@ -96,7 +100,49 @@ impl Parser {
                 self.push_node(NodeKind::Bool(b), 1)
             }
             _ => false,
-        })
+        }) || self.try_stack()
+    }
+
+    fn try_stack(&mut self) -> bool {
+        if !self.matches(lx::TokenKind::LSquare) {
+            return false;
+        }
+        let start = self.cursor;
+        let nodes_start = self.nodes.len();
+        while !self.is_eof() {
+            if self.matches(lx::TokenKind::RSquare) {
+                break;
+            }
+
+            if !self.try_literal() {
+                self.bump();
+                return self.push_node(NodeKind::Error("Expected literal or ']'".to_string()), 1);
+            }
+
+            if !self.matches(lx::TokenKind::Comma) {
+                if self.matches(lx::TokenKind::RSquare) {
+                    break;
+                } else {
+                    return self.push_node(NodeKind::Error("Expected ',' or ']'".to_string()), 1);
+                }
+            }
+        }
+        let nodes = self.nodes.split_off(nodes_start);
+        let lits = nodes
+            .iter()
+            .map(|n| match &n.kind {
+                NodeKind::String(s) => rt::Value::String(s.clone()),
+                NodeKind::Number(n) => rt::Value::Number(*n),
+                NodeKind::Int(n) => rt::Value::Int(*n),
+                NodeKind::Bool(b) => rt::Value::Bool(*b),
+                NodeKind::Stack(s) => rt::Value::Stack(s.clone()),
+                _ => todo!("Not a literal"),
+            })
+            .collect::<Vec<_>>();
+        self.push_node(
+            NodeKind::Stack(rt::Stack { values: lits }),
+            self.cursor - start,
+        )
     }
 
     fn try_break(&mut self) -> bool {
@@ -121,7 +167,9 @@ impl Parser {
             if self.matches(lx::TokenKind::RCurly) {
                 return Some(self.nodes.split_off(start_body));
             }
-            self.try_one();
+            if !self.try_one() {
+                return None;
+            }
         }
         self.push_node(NodeKind::Error("Expected closing '}'".to_string()), 1);
         return None;
@@ -196,6 +244,18 @@ impl Parser {
         }
     }
 
+    fn try_with(&mut self) -> bool {
+        let start = self.cursor;
+        if !self.matches(lx::TokenKind::KwWith) {
+            return false;
+        }
+
+        match self.parse_body() {
+            Some(body) => self.push_node(NodeKind::With { body }, self.cursor - start),
+            None => true,
+        }
+    }
+
     fn try_instruction(&mut self) -> bool {
         match self.peek() {
             Some(lx::Token {
@@ -216,6 +276,7 @@ impl Parser {
             || self.try_loop()
             || self.try_if()
             || self.try_function()
+            || self.try_with()
             || self.try_instruction()
             || false
     }
